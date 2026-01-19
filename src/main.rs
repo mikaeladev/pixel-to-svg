@@ -8,10 +8,10 @@ use std::{
 
 use svg::{
   Document, Node,
-  node::element::{Path, path::Data},
+  node::element::{Group, Path, Rectangle, path::Data},
 };
 
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -21,6 +21,20 @@ struct Args {
   /// Path to the output file or '-' for stdout
   #[arg(short = 'O', long = "output")]
   output: Option<PathBuf>,
+  /// Method used to represent pixels
+  #[arg(short = 'm', long = "method", default_value = "polygons")]
+  method: Method,
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum Method {
+  /// Uses `<path>` elements to draw connected shapes out of line segments;
+  /// results in a smaller file size and more efficient rendering
+  Polygons,
+  /// Uses `<rect>` elements to represent individual pixels; results in a much
+  /// larger file size, but can be useful if you want to import the SVG in a
+  /// pixel art editor
+  Rectangles,
 }
 
 enum Output {
@@ -70,8 +84,53 @@ fn to_hexcode(colours: &[u8]) -> String {
   }
 }
 
+fn to_px(value: u32) -> String {
+  format!("{value}px")
+}
+
+fn to_path_element(hexcode: &str, coords: &Vec<(u32, u32)>) -> Path {
+  let mut data = Data::new();
+
+  for (x, y) in coords {
+    let (x, y) = (*x, *y);
+
+    data = data
+      .move_to((x, y))
+      .line_to((x + 1, y))
+      .line_to((x + 1, y + 1))
+      .line_to((x, y + 1));
+  }
+
+  data = data.close();
+
+  Path::new().set("fill", hexcode).set("d", data)
+}
+
+fn to_rect_element(hexcode: &str, coords: &Vec<(u32, u32)>) -> Group {
+  let mut group = Group::new();
+
+  for (x, y) in coords {
+    let (x, y) = (*x, *y);
+
+    let rect = Rectangle::new()
+      .set("x", to_px(x))
+      .set("y", to_px(y))
+      .set("width", to_px(1))
+      .set("height", to_px(1))
+      .set("fill", hexcode);
+
+    group.append(rect);
+  }
+
+  group
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
-  let Args { input, output } = Args::parse();
+  let Args {
+    input,
+    output,
+    method,
+  } = Args::parse();
 
   let output = output.unwrap_or_else(|| input.with_extension("svg"));
 
@@ -93,24 +152,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     .set("viewBox", (0, 0, image_data.width(), image_data.height()));
 
   for (hexcode, coords) in pixel_map.iter() {
-    let mut data = Data::new();
-
-    for (x, y) in coords {
-      let x = *x;
-      let y = *y;
-
-      data = data
-        .move_to((x, y))
-        .line_to((x + 1, y))
-        .line_to((x + 1, y + 1))
-        .line_to((x, y + 1));
+    match method {
+      Method::Polygons => document.append(to_path_element(hexcode, coords)),
+      Method::Rectangles => document.append(to_rect_element(hexcode, coords)),
     }
-
-    let path = Path::new()
-      .set("fill", hexcode.to_owned())
-      .set("d", data.close());
-
-    document.append(path);
   }
 
   svg::write(Output::new(output)?, &document)?;
