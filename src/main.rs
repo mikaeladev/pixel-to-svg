@@ -12,9 +12,6 @@ enum Method {
   /// Uses `<path>` elements to draw connected shapes out of line segments;
   /// results in a small file size and efficient rendering (recommended)
   Polygons,
-  /// Uses `<rect>` elements to draw rows of rectangles; similar to pixels but
-  /// with adjacent pixels of the same colour merged into a larger block
-  Blocks,
   /// Uses `<rect>` elements to plot individual pixels one by one; results in a
   /// much larger file size, but an easily editable result
   Pixels,
@@ -59,7 +56,7 @@ fn main() -> Result<(), Box<dyn Error>> {
       .and_modify(|vec| {
         let new_shape = match method {
           Method::Pixels => shape,
-          Method::Polygons | Method::Blocks => {
+          Method::Polygons => {
             let last_shape = vec.pop_if(|s| s.is_adjacent(&shape));
 
             match last_shape {
@@ -98,7 +95,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         document.append(path)
       }
-      Method::Pixels | Method::Blocks => {
+      Method::Pixels => {
         for shape in shapes {
           let mut rect = element::Rectangle::new();
 
