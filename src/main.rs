@@ -1,10 +1,10 @@
-mod outputs;
 mod pixels;
 
 use clap::{Parser, ValueEnum};
-use outputs::Output;
+use image::EncodableLayout;
+use patharg::{InputArg, OutputArg};
 use pixels::{PixelData, ShapeData};
-use std::{collections::HashMap, error::Error, path::PathBuf};
+use std::{collections::HashMap, error::Error};
 use svg::{Document, Node, node::element};
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -20,12 +20,12 @@ enum Method {
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 struct Args {
-  /// Path to the input file
-  input: PathBuf,
+  /// Path to the input file or '-' for stdin
+  input: InputArg,
 
   /// Path to the output file or '-' for stdout
   #[arg(short = 'O', long = "output")]
-  output: Option<PathBuf>,
+  output: Option<OutputArg>,
 
   /// Method used to generate the image
   #[arg(short = 'm', long = "method", default_value = "polygons")]
@@ -33,16 +33,16 @@ struct Args {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-  let Args {
-    input,
-    output,
-    method,
-  } = Args::parse();
+  let args = Args::parse();
 
-  let output = output.unwrap_or_else(|| input.with_extension("svg"));
+  let input = match args.input {
+    InputArg::Stdin => image::load_from_memory(args.input.read()?.as_bytes()),
+    InputArg::Path(value) => image::open(value),
+  }?;
 
-  let image_file = image::open(input)?;
-  let image_data = image_file.to_rgba8();
+  let output = args.output.unwrap_or_default().create()?;
+
+  let image_data = input.to_rgba8();
   let image_pixels = image_data.enumerate_pixels().filter(|(_, _, c)| c[3] > 0);
 
   let mut shape_data: HashMap<String, Vec<ShapeData>> = HashMap::new();
@@ -54,7 +54,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     shape_data
       .entry(pixel.hexcode)
       .and_modify(|vec| {
-        let new_shape = match method {
+        let new_shape = match args.method {
           Method::Pixels => shape,
           Method::Polygons => {
             let last_shape = vec.pop_if(|s| s.is_adjacent(&shape));
@@ -81,7 +81,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     .set("viewBox", (0, 0, image_data.width(), image_data.height()));
 
   for (hexcode, shapes) in shape_data {
-    match method {
+    match args.method {
       Method::Polygons => {
         let mut path = element::Path::new();
         let mut data = element::path::Data::new();
@@ -108,6 +108,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     };
   }
 
-  svg::write(Output::new(output)?, &document)?;
+  svg::write(output, &document)?;
   Ok(())
 }

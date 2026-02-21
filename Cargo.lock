@@ -697,11 +697,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "35fb2e5f958ec131621fdd531e9fc186ed768cbe395337403ae56c17a74c68ec"
 
 [[package]]
+name = "patharg"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4d67efed937875267f39986682045e3430c4da4055785825506837ddb037c771"
+dependencies = [
+ "cfg-if",
+ "either",
+]
+
+[[package]]
 name = "pixel-to-svg"
 version = "0.1.0"
 dependencies = [
  "clap",
  "image",
+ "patharg",
  "svg",
 ]
 
