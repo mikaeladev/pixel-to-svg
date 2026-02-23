@@ -24,8 +24,8 @@ struct Args {
   input: InputArg,
 
   /// Path to the output file or '-' for stdout
-  #[arg(short = 'O', long = "output")]
-  output: Option<OutputArg>,
+  #[arg(short = 'O', long = "output", default_value = "-")]
+  output: OutputArg,
 
   /// Method used to generate the image
   #[arg(short = 'm', long = "method", default_value = "polygons")]
@@ -40,7 +40,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     InputArg::Path(value) => image::open(value),
   }?;
 
-  let output = args.output.unwrap_or_default().create()?;
+  let output = args.output.create()?;
 
   let image_data = input.to_rgba8();
   let image_pixels = image_data.enumerate_pixels().filter(|(_, _, c)| c[3] > 0);
