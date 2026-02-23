@@ -1,10 +1,11 @@
+mod errors;
 mod pixels;
 
 use clap::{Parser, ValueEnum};
-use image::EncodableLayout;
+use image::{EncodableLayout, ImageError};
 use patharg::{InputArg, OutputArg};
 use pixels::{PixelData, ShapeData};
-use std::{collections::HashMap, error::Error};
+use std::{collections::HashMap, process};
 use svg::{Document, Node, node::element};
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -32,7 +33,7 @@ struct Args {
   method: Method,
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn try_main() -> Result<(), ImageError> {
   let args = Args::parse();
 
   let input = match args.input {
@@ -110,4 +111,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 
   svg::write(output, &document)?;
   Ok(())
+}
+
+fn main() {
+  process::exit(match try_main() {
+    Ok(_) => 0,
+    Err(err) => errors::handle_image_errors(err),
+  })
 }
