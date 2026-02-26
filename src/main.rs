@@ -1,12 +1,16 @@
 mod errors;
 mod pixels;
 
+use std::{
+  collections::{HashMap, hash_map::IntoIter},
+  process::exit,
+};
+
 use clap::{Parser, ValueEnum};
-use image::{EncodableLayout, ImageError};
+use image::{EncodableLayout, ImageError, RgbaImage};
 use patharg::{InputArg, OutputArg};
 use pixels::{PixelData, ShapeData};
-use std::{collections::HashMap, process};
-use svg::{Document, Node, node::element};
+use svg::{Document, Node};
 
 #[derive(Clone, Copy, ValueEnum)]
 enum Method {
@@ -33,17 +37,10 @@ struct Args {
   method: Method,
 }
 
-fn try_main() -> Result<(), ImageError> {
-  let args = Args::parse();
-
-  let input = match args.input {
-    InputArg::Stdin => image::load_from_memory(args.input.read()?.as_bytes()),
-    InputArg::Path(value) => image::open(value),
-  }?;
-
-  let output = args.output.create()?;
-
-  let image_data = input.to_rgba8();
+fn image_to_shapes(
+  image_data: &RgbaImage,
+  method: &Method,
+) -> IntoIter<String, Vec<ShapeData>> {
   let image_pixels = image_data.enumerate_pixels().filter(|(_, _, c)| c[3] > 0);
 
   let mut shape_data: HashMap<String, Vec<ShapeData>> = HashMap::new();
@@ -55,22 +52,17 @@ fn try_main() -> Result<(), ImageError> {
     shape_data
       .entry(pixel.hexcode)
       .and_modify(|vec| {
-        let new_shape = match args.method {
+        let new_shape = match method {
           Method::Pixels => shape,
-          Method::Polygons => {
-            let last_shape = vec.pop_if(|s| s.is_adjacent(&shape));
-
-            match last_shape {
-              None => shape,
-              Some(s) => {
-                let mut new_shape = shape;
-
-                new_shape.tl.0 = s.tl.0;
-                new_shape.bl.0 = s.bl.0;
-                new_shape
-              }
+          Method::Polygons => match vec.pop_if(|s| s.is_adjacent(&shape)) {
+            None => shape,
+            Some(s) => {
+              let mut new_shape = shape;
+              new_shape.tl.0 = s.tl.0;
+              new_shape.bl.0 = s.bl.0;
+              new_shape
             }
-          }
+          },
         };
 
         vec.push(new_shape)
@@ -78,14 +70,35 @@ fn try_main() -> Result<(), ImageError> {
       .or_insert(vec![shape]);
   }
 
-  let mut document = Document::new()
-    .set("viewBox", (0, 0, image_data.width(), image_data.height()));
+  shape_data.into_iter()
+}
+
+fn shapes_to_document(
+  image_data: &RgbaImage,
+  shape_data: IntoIter<String, Vec<ShapeData>>,
+  method: &Method,
+) -> Document {
+  use svg::node::element::{Path, Rectangle, path::Data as PathData};
+
+  let (width, height) = image_data.dimensions();
+
+  let mut document = Document::new().set("viewBox", (0, 0, width, height));
 
   for (hexcode, shapes) in shape_data {
-    match args.method {
+    match method {
+      Method::Pixels => {
+        for shape in shapes {
+          let mut rect = Rectangle::new();
+
+          rect = rect.set("fill", hexcode.to_owned());
+          rect = shape.to_rectangle(rect);
+
+          document.append(rect);
+        }
+      }
       Method::Polygons => {
-        let mut path = element::Path::new();
-        let mut data = element::path::Data::new();
+        let mut path = Path::new();
+        let mut data = PathData::new();
 
         for shape in shapes {
           data = shape.to_polygon(data);
@@ -96,25 +109,34 @@ fn try_main() -> Result<(), ImageError> {
 
         document.append(path)
       }
-      Method::Pixels => {
-        for shape in shapes {
-          let mut rect = element::Rectangle::new();
-
-          rect = rect.set("fill", hexcode.to_owned());
-          rect = shape.to_rectangle(rect);
-
-          document.append(rect);
-        }
-      }
     };
   }
 
+  document
+}
+
+fn try_main() -> Result<(), ImageError> {
+  let args = Args::parse();
+
+  let output = args.output.create()?;
+
+  let input = match args.input {
+    InputArg::Path(value) => image::open(value),
+    InputArg::Stdin => image::load_from_memory(args.input.read()?.as_bytes()),
+  }?;
+
+  let image_data = input.to_rgba8();
+
+  let shapes = image_to_shapes(&image_data, &args.method);
+  let document = shapes_to_document(&image_data, shapes, &args.method);
+
   svg::write(output, &document)?;
+
   Ok(())
 }
 
 fn main() {
-  process::exit(match try_main() {
+  exit(match try_main() {
     Ok(_) => 0,
     Err(err) => errors::handle_image_errors(err),
   })
