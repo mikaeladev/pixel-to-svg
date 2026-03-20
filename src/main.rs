@@ -1,56 +1,143 @@
 mod errors;
-mod pixels;
 
-use std::{
-  collections::{HashMap, hash_map::IntoIter},
-  process::exit,
-};
+use std::{fmt, io::Write, process::exit};
 
 use clap::{Parser, ValueEnum};
 use image::{EncodableLayout, ImageError, RgbaImage};
+use indexmap::{IndexMap, map::IntoIter};
 use patharg::{InputArg, OutputArg};
-use pixels::{PixelData, ShapeData};
-use svg::{Document, Node};
+
+const HELP_MESSAGE: &str = color_print::cstr!(
+  "\
+<s><u>usage:</></> pixel-to-svg [OPTIONS] <<INPUT>>
+
+<s><u>arguments:</></>
+  <y><<INPUT>></>
+    path to the input file (or '-' for stdin)
+
+    <s>supported image formats:</>
+    <dim>*</> BMP <dim>(.bmp, .dib)</>
+    <dim>*</> ICO <dim>(.ico)</>
+    <dim>*</> PNG <dim>(.png)</>
+    <dim>*</> PNM <dim>(.pbm, .pgm, .ppm, .pnm)</>
+    <dim>*</> TGA <dim>(.tga, .icb, .vda, .vst)</>
+
+<s><u>options:</></>
+  <y>-O --output <<OUTPUT>></>
+    path to the output file (or '-' for stdout)
+
+    [default: -]
+
+  <y>-m --method <<METHOD>></>
+    method used to generate the svg
+
+    <s>possible values</>:
+    <dim>*</> polygons: uses '<<path>>' elements to draw connected shapes
+    <dim>*</> pixels:   uses '<<rect>>' elements to plot individual pixels
+
+    [default: polygons]
+
+  <y>-h --help</>
+    print this help message
+
+  <y>-V --version</>
+    print the version
+
+<s><u>about:</></>
+  pixel-to-svg is a tool for converting bitmap images to scalable vectors, with
+  a focus on pixel-perfection and tiny results
+
+  <i>made with <<3 by mikaeladev <<mikaeladev@icloud.com>></>
+  <i>source code is available on github <dim>(GPL-3.0)</></>
+"
+);
 
 #[derive(Clone, Copy, ValueEnum)]
 enum Method {
-  /// Uses `<path>` elements to draw connected shapes out of line segments;
-  /// results in a small file size and efficient rendering (recommended)
   Polygons,
-  /// Uses `<rect>` elements to plot individual pixels one by one; results in a
-  /// much larger file size, but an easily editable result
   Pixels,
 }
 
 #[derive(Parser)]
-#[command(version, about, long_about = None)]
+#[command(about, version, override_help = HELP_MESSAGE)]
 struct Args {
-  /// Path to the input file or '-' for stdin
   input: InputArg,
 
-  /// Path to the output file or '-' for stdout
   #[arg(short = 'O', long = "output", default_value = "-")]
   output: OutputArg,
 
-  /// Method used to generate the image
   #[arg(short = 'm', long = "method", default_value = "polygons")]
   method: Method,
 }
 
+#[derive(Clone, Copy, PartialEq)]
+pub struct Coords {
+  pub x: u32,
+  pub y: u32,
+}
+
+impl Coords {
+  pub fn new(x: u32, y: u32) -> Self {
+    Self { x, y }
+  }
+}
+
+impl fmt::Display for Coords {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "{},{}", self.x, self.y)
+  }
+}
+
+#[derive(Clone, Copy)]
+pub struct ShapeData {
+  pub tl: Coords,
+  pub tr: Coords,
+  pub bl: Coords,
+  pub br: Coords,
+}
+
+impl ShapeData {
+  pub fn new(coords: Coords) -> Self {
+    let Coords { x, y } = coords;
+
+    ShapeData {
+      tl: Coords::new(x, y),
+      tr: Coords::new(x + 1, y),
+      bl: Coords::new(x, y + 1),
+      br: Coords::new(x + 1, y + 1),
+    }
+  }
+
+  pub fn is_adjacent(&self, other: &Self) -> bool {
+    self.tl.y == other.tl.y && self.tr.x == other.tl.x
+  }
+}
+
+fn to_hexcode(colours: [u8; 4]) -> String {
+  let rgb = format!("#{:02x}{:02x}{:02x}", colours[0], colours[1], colours[2]);
+
+  if colours[3] < 0xFF {
+    return format!("{rgb}{:02x}", colours[3]);
+  } else {
+    return rgb;
+  }
+}
+
 fn image_to_shapes(
-  image_data: &RgbaImage,
+  image_data: RgbaImage,
   method: &Method,
 ) -> IntoIter<String, Vec<ShapeData>> {
   let image_pixels = image_data.enumerate_pixels().filter(|(_, _, c)| c[3] > 0);
 
-  let mut shape_data: HashMap<String, Vec<ShapeData>> = HashMap::new();
+  let mut shape_data = IndexMap::<String, Vec<ShapeData>>::new();
 
   for (x, y, c) in image_pixels {
-    let pixel = PixelData::new(x, y, c);
-    let shape = ShapeData::new(&pixel);
+    let coords = Coords::new(x, y);
+    let shape = ShapeData::new(coords);
+    let hexcode = to_hexcode(c.0);
 
     shape_data
-      .entry(pixel.hexcode)
+      .entry(hexcode)
       .and_modify(|vec| {
         let new_shape = match method {
           Method::Pixels => shape,
@@ -58,8 +145,8 @@ fn image_to_shapes(
             None => shape,
             Some(s) => {
               let mut new_shape = shape;
-              new_shape.tl.0 = s.tl.0;
-              new_shape.bl.0 = s.bl.0;
+              new_shape.tl.x = s.tl.x;
+              new_shape.bl.x = s.bl.x;
               new_shape
             }
           },
@@ -73,52 +160,47 @@ fn image_to_shapes(
   shape_data.into_iter()
 }
 
-fn shapes_to_document(
-  image_data: &RgbaImage,
+fn shapes_to_children(
   shape_data: IntoIter<String, Vec<ShapeData>>,
   method: &Method,
-) -> Document {
-  use svg::node::element::{Path, Rectangle, path::Data as PathData};
+) -> Vec<String> {
+  let mut children: Vec<String> = vec![];
 
-  let (width, height) = image_data.dimensions();
-
-  let mut document = Document::new().set("viewBox", (0, 0, width, height));
-
-  for (hexcode, shapes) in shape_data {
-    match method {
-      Method::Pixels => {
+  match method {
+    Method::Pixels => {
+      for (hexcode, shapes) in shape_data {
         for shape in shapes {
-          let mut rect = Rectangle::new();
-
-          rect = rect.set("fill", hexcode.to_owned());
-          rect = shape.to_rectangle(rect);
-
-          document.append(rect);
+          children.push(format!(
+            r#"<rect x="{}" y="{}" width="{}" height="{}" fill="{}" />"#,
+            shape.tl.x,
+            shape.tl.y,
+            shape.tr.x - shape.tl.x,
+            shape.bl.y - shape.tl.y,
+            hexcode
+          ));
         }
       }
-      Method::Polygons => {
-        let mut path = Path::new();
-        let mut data = PathData::new();
+    }
+    Method::Polygons => {
+      for (hexcode, shapes) in shape_data {
+        let mut data = String::new();
 
         for shape in shapes {
-          data = shape.to_polygon(data);
+          let ShapeData { tl, tr, br, bl } = shape;
+          data += &format!("M{tl} {tr} {br} {bl} ");
         }
 
-        data = data.close();
-        path = path.set("fill", hexcode).set("d", data);
-
-        document.append(path)
+        data.push('z');
+        children.push(format!(r#"<path d="{data}" fill="{hexcode}" />"#))
       }
-    };
-  }
+    }
+  };
 
-  document
+  children
 }
 
-fn try_main() -> Result<(), ImageError> {
-  let args = Args::parse();
-
-  let output = args.output.create()?;
+fn try_main(args: Args) -> Result<(), ImageError> {
+  let mut output = args.output.create()?;
 
   let input = match args.input {
     InputArg::Path(value) => image::open(value),
@@ -126,18 +208,28 @@ fn try_main() -> Result<(), ImageError> {
   }?;
 
   let image_data = input.to_rgba8();
+  let image_dimensions = image_data.dimensions();
 
-  let shapes = image_to_shapes(&image_data, &args.method);
-  let document = shapes_to_document(&image_data, shapes, &args.method);
+  let shapes = image_to_shapes(image_data, &args.method);
+  let children = shapes_to_children(shapes, &args.method);
 
-  svg::write(output, &document)?;
+  writeln!(
+    output,
+    r#"<svg viewBox="0 0 {} {}" xmlns="http://www.w3.org/2000/svg">{}</svg>"#,
+    image_dimensions.0,
+    image_dimensions.1,
+    children.join("")
+  )?;
 
   Ok(())
 }
 
 fn main() {
-  exit(match try_main() {
+  // todo: use try_parse() and impl args error handling in errors.rs
+  let args = Args::parse();
+
+  exit(match try_main(args) {
     Ok(_) => 0,
-    Err(err) => errors::handle_image_errors(err),
+    Err(err) => errors::handle_image_error(err),
   })
 }

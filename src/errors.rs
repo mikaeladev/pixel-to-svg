@@ -1,26 +1,30 @@
-use colored::Colorize;
 use image::ImageError;
 use image::error::*;
-use posix_errors::*;
 
-pub fn handle_image_errors(err: ImageError) -> i32 {
-  let fancy_err_prefix = "error!".red().bold();
+pub const EPERM: i32 = 1;
+pub const EIO: i32 = 5;
+pub const ENOMEM: i32 = 12;
+pub const EINVAL: i32 = 22;
+pub const ENOTSUP: i32 = 45;
 
+pub const ERR_PREFIX: &str = color_print::cstr!("<bold><red>error!</></>");
+
+pub fn handle_image_error(err: ImageError) -> i32 {
   match err {
+    ImageError::IoError(err) => {
+      eprintln!("{ERR_PREFIX} operation failed: {}", err.kind());
+      err.raw_os_error().unwrap_or(EIO)
+    }
     ImageError::Decoding(err) => {
-      eprintln!("{fancy_err_prefix} decoding failed: {}", err.to_string());
+      eprintln!("{ERR_PREFIX} decoding failed: '{err}'");
       EIO
     }
     ImageError::Encoding(err) => {
-      eprintln!("{fancy_err_prefix} encoding failed: {}", err.to_string());
+      eprintln!("{ERR_PREFIX} encoding failed: '{err}'");
       EIO
     }
-    ImageError::IoError(err) => {
-      eprintln!("{fancy_err_prefix} operation failed: {}", err.to_string());
-      PosixError::from(err).code()
-    }
     ImageError::Limits(err) => {
-      eprintln!("{fancy_err_prefix} operation failed: {}", err.to_string());
+      eprintln!("{ERR_PREFIX} operation failed: '{err}'");
       match err.kind() {
         LimitErrorKind::InsufficientMemory => ENOMEM,
         _ => EPERM,
@@ -28,7 +32,7 @@ pub fn handle_image_errors(err: ImageError) -> i32 {
     }
     ImageError::Parameter(err) => {
       let err_msg: &str = match err.kind() {
-        ParameterErrorKind::Generic(reason) => &reason.to_owned(),
+        ParameterErrorKind::Generic(reason) => &format!("'{reason}'"),
         ParameterErrorKind::DimensionMismatch => "dimension mismatch",
         ParameterErrorKind::NoMoreData => "malformed data",
         ParameterErrorKind::FailedAlready => "failed already",
@@ -40,7 +44,7 @@ pub fn handle_image_errors(err: ImageError) -> i32 {
         _ => "unknown error",
       };
 
-      eprintln!("{fancy_err_prefix} input is invalid: {}", err_msg);
+      eprintln!("{ERR_PREFIX} input is invalid: {err_msg}");
       EINVAL
     }
     ImageError::Unsupported(err) => {
@@ -52,7 +56,7 @@ pub fn handle_image_errors(err: ImageError) -> i32 {
         _ => "unsupported operation",
       };
 
-      eprintln!("{fancy_err_prefix} input is invalid: {}", err_msg);
+      eprintln!("{ERR_PREFIX} input is invalid: {err_msg}");
       ENOTSUP
     }
   }

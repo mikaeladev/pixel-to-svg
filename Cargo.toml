@@ -2,11 +2,29 @@
 name = "pixel-to-svg"
 version = "0.1.0"
 edition = "2024"
+authors = ["mikaeladev <mikaeladev@icloud.com>"]
+description = "a tool for converting bitmap images to scalable vectors"
+repository = "https://github.com/mikaeladev/pixel-to-svg"
+license = "GPL-3.0-only"
+readme = "README.md"
 
 [dependencies]
-clap = { version = "4.5.54", features = ["derive"] }
-colored = "3.1.1"
-image = "0.25.9"
+color-print = "0.3.7"
+indexmap = "2.13.0"
 patharg = "0.4.1"
-posix-errors = "1.2.1"
-svg = "0.18.0"
+
+[dependencies.clap]
+version = "4.5.54"
+features = ["derive", "std"]
+default-features = false
+
+[dependencies.image]
+version = "0.25.9"
+features = ["bmp", "ico", "png", "pnm", "tga"]
+default-features = false
+
+[profile.release]
+opt-level = "s"
+codegen-units = 1
+strip = true
+lto = true
