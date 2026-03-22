@@ -1,3 +1,6 @@
+use std::process::exit;
+
+use clap::Error as ClapError;
 use image::ImageError;
 use image::error::*;
 
@@ -9,10 +12,20 @@ pub const ENOTSUP: i32 = 45;
 
 pub const ERR_PREFIX: &str = color_print::cstr!("<bold><red>error!</></>");
 
-pub fn handle_image_error(err: ImageError) -> i32 {
-  match err {
+pub fn handle_clap_error(err: ClapError) -> ! {
+  if err.use_stderr() {
+    // todo: actually describe which arguments are invalid and why
+    eprintln!("{ERR_PREFIX} invalid argument(s), see '--help' for usage info");
+    exit(EINVAL)
+  } else {
+    err.exit()
+  }
+}
+
+pub fn handle_image_error(err: ImageError) -> ! {
+  exit(match err {
     ImageError::IoError(err) => {
-      eprintln!("{ERR_PREFIX} operation failed: {}", err.kind());
+      eprintln!("{ERR_PREFIX} io operation failed: {}", err.kind());
       err.raw_os_error().unwrap_or(EIO)
     }
     ImageError::Decoding(err) => {
@@ -59,5 +72,5 @@ pub fn handle_image_error(err: ImageError) -> i32 {
       eprintln!("{ERR_PREFIX} input is invalid: {err_msg}");
       ENOTSUP
     }
-  }
+  })
 }

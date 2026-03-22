@@ -17,12 +17,9 @@ the CLI takes the following image formats as input:
 - [PNM] (.pbm, .pgm, .ppm, .pnm)
 - [TGA] (.tga, .icb, .vda, .vst)
 
-if you wish to convert from other file types, you can use the [magick] CLI.
-
-> [!CAUTION]
-> be careful using this tool with images converted from lossily-compressed
-> formats (such as JPEG) as they may contain [compression artefacts] that can
-> complicate the resulting SVG.
+if you wish to convert from other file types, you can use the [magick] CLI, but
+be careful using this tool with images converted from lossy formats (such as
+JPEG) as they may contain [compression artefacts] that can complicate the SVG.
 
 ## supported methods
 
@@ -36,8 +33,8 @@ if you want to edit the SVG afterwards, but it results in a _much_ larger file
 size since every pixel is represented by its own `<rect>` element (_this also
 causes trouble with some SVG renderers, namely [Qt SVG]_).
 
-the CLI is set to use the 'polygons' method by default, but you can use the
-'pixels' method with the `--method` (or `-m`) option.
+the CLI is set to use 'polygons' by default, but you can use the 'pixels'
+method with the `--method` (or `-m`) option.
 
 ## related projects
 

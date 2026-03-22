@@ -1,6 +1,6 @@
 mod errors;
 
-use std::{fmt, io::Write, process::exit};
+use std::{fmt, io::Write};
 
 use clap::{Parser, ValueEnum};
 use image::{EncodableLayout, ImageError, RgbaImage};
@@ -225,11 +225,12 @@ fn try_main(args: Args) -> Result<(), ImageError> {
 }
 
 fn main() {
-  // todo: use try_parse() and impl args error handling in errors.rs
-  let args = Args::parse();
+  let args = match Args::try_parse() {
+    Ok(a) => a,
+    Err(err) => errors::handle_clap_error(err),
+  };
 
-  exit(match try_main(args) {
-    Ok(_) => 0,
-    Err(err) => errors::handle_image_error(err),
-  })
+  if let Err(err) = try_main(args) {
+    errors::handle_image_error(err)
+  }
 }
