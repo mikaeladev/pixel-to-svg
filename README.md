@@ -18,8 +18,8 @@ the CLI takes the following image formats as input:
 - [TGA] (.tga, .icb, .vda, .vst)
 
 if you wish to convert from other file types, you can use the [magick] CLI, but
-be careful using this tool with images converted from lossy formats (such as
-JPEG) as they may contain [compression artefacts] that can complicate the SVG.
+be careful generating SVGs from lossy formats (such as JPEG) as they may
+contain [compression artefacts] that can complicate the result.
 
 ## supported methods
 
@@ -35,6 +35,16 @@ causes trouble with some SVG renderers, namely [Qt SVG]_).
 
 the CLI is set to use 'polygons' by default, but you can use the 'pixels'
 method with the `--method` (or `-m`) option.
+
+## future work
+
+i hope to implement the following in future updates:
+
+- merging of vertically-adjacent polygons of the same width
+- context-aware clap error handling
+
+if you're up for the task, feel free to open a pull request. i only ask that
+your code be properly formatted and not AI generated - thank you!
 
 ## related projects
 
